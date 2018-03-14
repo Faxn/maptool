@@ -47,8 +47,6 @@ import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
-import java.io.File;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -134,6 +132,7 @@ import net.rptools.maptool.util.TokenUtil;
 import net.rptools.parser.ParserException;
 
 import org.apache.log4j.Logger;
+
 
 /**
  */
@@ -1125,7 +1124,8 @@ public class ZoneRenderer extends JComponent implements DropTargetListener, Comp
 		}
 		if (Zone.Layer.TOKEN.isEnabled()) {
 			timer.start("lights");
-			renderLights(g2d, view);
+			//renderLights(g2d, view);
+			renderLightsBlend(g2d, view);
 			timer.stop("lights");
 
 			timer.start("auras");
@@ -1399,6 +1399,37 @@ public class ZoneRenderer extends JComponent implements DropTargetListener, Comp
 			}
 		}
 		timer.stop("lights-5");
+		newG.dispose();
+	}
+	
+	private void renderLightsBlend(Graphics2D g, PlayerView view) {
+		Dimension size = getSize();
+		Graphics2D newG = (Graphics2D) g.create();
+		if (!view.isGMView() && visibleScreenArea != null) {
+			Area clip = new Area(g.getClip());
+			clip.intersect(visibleScreenArea);
+			newG.setClip(clip);
+		}
+		
+		AffineTransform af = g.getTransform();
+		af.translate(getViewOffsetX(), getViewOffsetY());
+		af.scale(getScale(), getScale());
+		//newG.setTransform(af);		
+		
+		BufferedImage lightLayer = new BufferedImage(size.width, size.height, Transparency.OPAQUE);
+		Graphics2D lg = lightLayer.createGraphics();
+		lg.setTransform(af);
+		//lg.setPaint(Color.CYAN);
+		//lg.fillRect(0, 0, size.width, size.height);
+		lg.setComposite(new BlendComposite(1f));
+		for(DrawableLight light : zoneView.getDrawableLights()) {
+			lg.setPaint(light.getPaint().getPaint());
+			lg.fill(light.getArea());
+		}
+		lg.dispose();
+		
+		newG.setComposite(new BlendComposite(BlendComposite.BlendMode.MULTIPLY, 0.6f));
+		newG.drawImage(lightLayer, 0, 0, this);
 		newG.dispose();
 	}
 
