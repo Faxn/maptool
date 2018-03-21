@@ -626,7 +626,7 @@ public class ZoneRenderer extends JComponent implements DropTargetListener, Comp
 		tokenStackMap = null;
 
 		flushFog = true;
-		renderedLightMap = null;
+		renderedLights = null;
 		renderedAuraMap = null;
 
 		zoneView.flush(token);
@@ -654,14 +654,14 @@ public class ZoneRenderer extends JComponent implements DropTargetListener, Comp
 		flipImageMap.clear();
 		flipIsoImageMap.clear();
 		fogBuffer = null;
-		renderedLightMap = null;
+		renderedLights = null;
 		renderedAuraMap = null;
 
 		isLoaded = false;
 	}
 
 	public void flushLight() {
-		renderedLightMap = null;
+		renderedLights = null;
 		renderedAuraMap = null;
 		zoneView.flush();
 		repaint();
@@ -952,14 +952,14 @@ public class ZoneRenderer extends JComponent implements DropTargetListener, Comp
 	}
 
 	/**
-	 * This method clears {@link #renderedAuraMap}, {@link #renderedLightMap},
+	 * This method clears {@link #renderedAuraMap}, {@link #renderedLights},
 	 * {@link #visibleScreenArea}, and {@link #lastView}. It also flushes the
 	 * {@link #zoneView} and sets the {@link #flushFog} flag so that fog will be
 	 * recalculated.
 	 */
 	public void invalidateCurrentViewCache() {
 		flushFog = true;
-		renderedLightMap = null;
+		renderedLights = null;
 		renderedAuraMap = null;
 		visibleScreenArea = null;
 		lastView = null;
@@ -1304,103 +1304,70 @@ public class ZoneRenderer extends JComponent implements DropTargetListener, Comp
 		return timer;
 	}
 
-	private Map<Paint, List<Area>> renderedLightMap;
+	private Map<Paint, List<Area>> renderedLights;
 
-	private void renderLights(Graphics2D g, PlayerView view) {
-		// Setup
-		timer.start("lights-1");
-		Graphics2D newG = (Graphics2D) g.create();
-		if (!view.isGMView() && visibleScreenArea != null) {
-			Area clip = new Area(g.getClip());
-			clip.intersect(visibleScreenArea);
-			newG.setClip(clip);
+ 	private void renderLights(Graphics2D g, PlayerView view) {
+ 		timer.start("lights-1");
+ 		Dimension size = getSize();
+ 		Graphics2D newG = (Graphics2D) g.create();
+ 		if (!view.isGMView() && visibleScreenArea != null) {
+ 			Area clip = new Area(g.getClip());
+ 			clip.intersect(visibleScreenArea);
+ 			newG.setClip(clip);
+ 		}
+ 		timer.stop("lights-1");
+ 		
+ 		timer.start("lights-2");
+ 		BufferedImage lightLayer = new BufferedImage(size.width, size.height, Transparency.OPAQUE);
+ 		Graphics2D lg = lightLayer.createGraphics();
+ 		lg.setPaint(Color.BLACK);
+ 		lg.fillRect(0, 0, size.width, size.height);
+ 		
+ 		//Transform so we can draw areas with coordinates in Map-Space on to the LightLayer
+ 		// Which uses Screen-Space.
+ 		AffineTransform af = g.getTransform();
+ 		af.translate(getViewOffsetX(), getViewOffsetY());
+ 		af.scale(getScale(), getScale());
+ 		lg.setTransform(af);
+ 		timer.stop("lights-2");
+ 		
+ 		timer.start("lights-3");
+ 		List<DrawableLight> lights = new ArrayList<>(zoneView.getDrawableLights());
+ 		//TODO: make lights comparable.
+ 		//lights.sort(null);
+ 		timer.stop("lights-3");
+ 		
+ 		timer.start("lights-4");
+ 		lg.setComposite(AlphaComposite.Src);
+ 		for(DrawableLight light : lights) {
+ 			lg.setPaint(light.getPaint().getPaint());
+ 			lg.fill(light.getArea());
+ 		}
+ 		lg.dispose();
+ 		timer.stop("lights-4");
+ 		
+ 		timer.start("lights-5");
+ 		newG.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, AppPreferences.getLightOverlayOpacity() / 255.0f));
+ 		newG.drawImage(lightLayer, 0, 0, this);
+ 		dumpImage(lightLayer);
+ 		timer.start("lights-5");
+ 		
+ 		newG.dispose();
+ 		
+ 	}
+ 	
+ 	//TODO: Debug Method, Please Remove
+ 	private static void dumpImage(BufferedImage im) {
+ 		String name = ""+(System.currentTimeMillis() / 1000L) + ".png";
+ 		File f = new File(name);
+ 		try {
+			ImageIO.write(im, "PNG", f);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
-		SwingUtil.useAntiAliasing(newG);
-		timer.stop("lights-1");
-		timer.start("lights-2");
-
-		AffineTransform af = g.getTransform();
-		af.translate(getViewOffsetX(), getViewOffsetY());
-		af.scale(getScale(), getScale());
-		newG.setTransform(af);
-
-		newG.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, AppPreferences.getLightOverlayOpacity() / 255.0f));
-		timer.stop("lights-2");
-
-		if (renderedLightMap == null) {
-			timer.start("lights-3");
-			// Organize
-			Map<Paint, List<Area>> colorMap = new HashMap<Paint, List<Area>>();
-			List<DrawableLight> otherLightList = new LinkedList<DrawableLight>();
-			for (DrawableLight light : zoneView.getDrawableLights()) {
-				// Jamz TODO: Fix, doesn't work in Day light, probably need to hack this up
-				if (light.getType() == LightSource.Type.NORMAL) {
-					if (zone.getVisionType() == Zone.VisionType.NIGHT && light.getPaint() != null) {
-						List<Area> areaList = colorMap.get(light.getPaint().getPaint());
-						if (areaList == null) {
-							areaList = new ArrayList<Area>();
-							colorMap.put(light.getPaint().getPaint(), areaList);
-						}
-						areaList.add(new Area(light.getArea()));
-					}
-				} else {
-					// I'm not a huge fan of this hard wiring, but I haven't thought of a better way yet, so this'll work fine for now
-					otherLightList.add(light);
-				}
-			}
-			timer.stop("lights-3");
-
-			timer.start("lights-4");
-			// Combine same colors to avoid ugly overlap
-			// Avoid combining _all_ of the lights as the area adds are very expensive, just combine those that overlap
-			// Jamz TODO: Check this and make sure proper order is happening
-			for (List<Area> areaList : colorMap.values()) {
-				List<Area> sourceList = new LinkedList<Area>(areaList);
-				areaList.clear();
-
-				outter:
-				while (sourceList.size() > 0) {
-					Area area = sourceList.remove(0);
-
-					for (ListIterator<Area> iter = sourceList.listIterator(); iter.hasNext();) {
-						Area currArea = iter.next();
-
-						if (currArea.getBounds().intersects(area.getBounds())) {
-							iter.remove();
-							area.add(currArea);
-							sourceList.add(area);
-							continue outter;
-						}
-					}
-					// If we are here, we didn't find any other area to merge with
-					areaList.add(area);
-				}
-				// Cut out the bright light
-				if (areaList.size() > 0) {
-					for (Area area : areaList) {
-						for (Area brightArea : zoneView.getBrightLights()) {
-							area.subtract(brightArea);
-						}
-					}
-				}
-			}
-			renderedLightMap = new LinkedHashMap<Paint, List<Area>>();
-			for (Entry<Paint, List<Area>> entry : colorMap.entrySet()) {
-				renderedLightMap.put(entry.getKey(), entry.getValue());
-			}
-			timer.stop("lights-4");
-		}
-		// Draw
-		timer.start("lights-5");
-		for (Entry<Paint, List<Area>> entry : renderedLightMap.entrySet()) {
-			newG.setPaint(entry.getKey());
-			for (Area area : entry.getValue()) {
-				newG.fill(area);
-			}
-		}
-		timer.stop("lights-5");
-		newG.dispose();
-	}
+ 		System.out.println(f.getAbsolutePath());
+ 	}
 
 	private Map<Paint, Area> renderedAuraMap;
 
