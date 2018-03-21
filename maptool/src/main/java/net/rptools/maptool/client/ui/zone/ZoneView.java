@@ -202,7 +202,7 @@ public class ZoneView implements ModelChangeListener {
 			lightArea.intersect(visibleArea);
 
 			if (light.getPaint() != null || isPersonalLight) {
-				lightSet.add(new DrawableLight(lightSource.getType(), light.getPaint(), lightArea));
+				lightSet.add(new DrawableLight(lightSource.getType(), light.getPaint(), lightArea, lightSource.getLumens()));
 			} else {
 				brightLightSet.add(lightArea);
 			}
@@ -445,7 +445,7 @@ public class ZoneView implements ModelChangeListener {
 									continue;
 								}
 							}
-							lightList.add(new DrawableLight(type, light.getPaint(), visibleArea));
+							lightList.add(new DrawableLight(type, light.getPaint(), visibleArea, lightSource.getLumens()));
 						}
 					}
 				}

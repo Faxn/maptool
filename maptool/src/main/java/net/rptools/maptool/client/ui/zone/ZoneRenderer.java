@@ -1304,7 +1304,7 @@ public class ZoneRenderer extends JComponent implements DropTargetListener, Comp
 		return timer;
 	}
 
-	private Map<Paint, List<Area>> renderedLights;
+	private List<DrawableLight> renderedLights;
 
  	private void renderLights(Graphics2D g, PlayerView view) {
  		timer.start("lights-1");
@@ -1333,8 +1333,7 @@ public class ZoneRenderer extends JComponent implements DropTargetListener, Comp
  		
  		timer.start("lights-3");
  		List<DrawableLight> lights = new ArrayList<>(zoneView.getDrawableLights());
- 		//TODO: make lights comparable.
- 		//lights.sort(null);
+ 		lights.sort(null);
  		timer.stop("lights-3");
  		
  		timer.start("lights-4");
@@ -1349,8 +1348,8 @@ public class ZoneRenderer extends JComponent implements DropTargetListener, Comp
  		timer.start("lights-5");
  		newG.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, AppPreferences.getLightOverlayOpacity() / 255.0f));
  		newG.drawImage(lightLayer, 0, 0, this);
- 		dumpImage(lightLayer);
- 		timer.start("lights-5");
+ 		//dumpImage(lightLayer); //TODO: Remove
+ 		timer.stop("lights-5");
  		
  		newG.dispose();
  		
